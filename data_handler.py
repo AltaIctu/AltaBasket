@@ -1,0 +1,225 @@
+import sqlite3
+import pandas as pd
+
+
+class SqlRequest:
+    """ Connect with db, make req and get respond"""
+
+    def __init__(self, request):
+        self.conn = sqlite3.connect(f'scores_data.db')
+        self.c = self.conn.cursor()
+        self.respond = self.c.execute(request)
+
+
+class Season:
+    """ year - pass the year when season starts,
+        country - pass country shortcut which is processing"""
+
+    import pandas as pd
+    import numpy as np
+
+    def __init__(self, year, country):
+        self.year = year
+        self.country = country
+        self.start_date = self.season_date("start")
+        self.end_date = self.season_date("end")
+        self.columns = [i[0] for i in pd.read_csv(f"columns_{self.country}.csv").iloc]
+
+    def numpy_df(self, respond, numpy=False):
+        if not numpy:
+            return Season.pd.DataFrame(respond, columns=self.columns)
+        else:
+            return Season.np.array(respond)
+
+    def season_date(self, which):
+
+        data_dict = {"start": [f"{self.year}-05-01", ">", min],
+                     "end": [f"{self.year + 1}-07-01", "<", max]}
+
+        date = data_dict[which][0]
+        sign = data_dict[which][1]
+        get_f = data_dict[which][2]
+
+        c = SqlRequest(f''' SELECT DATE FROM scores_{self.country} WHERE DATE {sign} "{date}" ''')
+        respond = c.respond.fetchall()
+        assert len(respond) > 0, "Returned date has 0 length. Check if year is correct."
+        return get_f(respond)[0]
+
+    def single_game(self, mnum, numpy=False):
+        game_respond = SqlRequest(f''' SELECT * from scores_{self.country} 
+        WHERE MNUM  = {mnum}''').respond.fetchall()
+        return self.numpy_df(game_respond, numpy)
+
+    def games_df(self, numpy=False):
+        games = SqlRequest(f''' SELECT * from scores_{self.country} 
+        WHERE MNUM IN {self.mnums}''').respond.fetchall()
+        return self.numpy_df(games, numpy)
+
+    @property
+    def teams(self):
+        teams_respond = SqlRequest(f''' SELECT DISTINCT TEAM from scores_{self.country} 
+        WHERE DATE BETWEEN  date('{self.start_date}') and date('{self.end_date}')''').respond.fetchall()
+        return [i[0] for i in teams_respond]
+
+    @property
+    def mnums(self):
+        mnums_resp = SqlRequest(f''' SELECT DISTINCT MNUM from scores_{self.country} 
+        WHERE DATE BETWEEN  date('{self.start_date}') and date('{self.end_date}')''').respond.fetchall()
+        return tuple(i[0] for i in mnums_resp)
+
+    @property
+    def benjamins(self):
+        previous_season_teams = Season(self.year - 1, self.country).teams
+        return [i for i in self.teams if i not in previous_season_teams]
+
+    @property
+    def games_count(self):
+        return len(set(self.mnums))
+
+
+class Team(Season):
+
+    def __init__(self, year, country, name):
+        super().__init__(year, country)
+        self.name = name
+
+    @property
+    def mnums(self):
+        team_mnums = SqlRequest(f''' SELECT DISTINCT MNUM FROM scores_{self.country} 
+        WHERE TEAM = "{self.name}" ''').respond.fetchall()
+        season_mnums = super().mnums
+        return tuple(i[0] for i in team_mnums if i[0] in season_mnums)
+
+    @property
+    def games_count(self):
+        return len(set(self.mnums))
+
+    def games_dates(self, mnums=False):
+        if not mnums:
+            games = self.games_df()["DATE"].drop_duplicates().sort_values()
+        else:
+            games = self.games_df()[["DATE", "MNUM"]].drop_duplicates().sort_values("DATE").reset_index(drop=True)
+        return games
+
+    def games_df(self, numpy=False):
+        games_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
+        WHERE MNUM IN {self.mnums} ''').respond.fetchall()
+        return self.numpy_df(games_respond, numpy)
+
+    def last_x_mnums_before(self, x, date):
+        mnums_before_date = SqlRequest(f''' SELECT MNUM FROM scores_{self.country}
+        WHERE DATE < date("{date}") AND TEAM = "{self.name}"''').respond.fetchall()
+        mnums_before_date = sorted(set(mnums_before_date))[-x:]
+        return tuple(i[0] for i in mnums_before_date)
+
+    def last_x_games_all(self, x, date, numpy=False):
+        mnums_before_date = self.last_x_mnums_before(x, date)
+        games_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
+        WHERE MNUM IN {mnums_before_date} ''').respond.fetchall()
+        return self.numpy_df(games_respond, numpy)
+
+    def last_x_games_ha(self, x, date, ha, numpy=False):
+        to_preview = 15
+        mnums_before_date = self.last_x_mnums_before(to_preview, date)
+        temp_arr = []
+        home_away_dict = {"home": 0, "away": -1}
+
+        for mnum in sorted(mnums_before_date, reverse=True):
+            game_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
+            WHERE MNUM = "{mnum}" ''').respond.fetchall()
+            temp_df = self.numpy_df(game_respond, numpy)
+            if temp_df["TEAM"].iloc[home_away_dict[ha]] == self.name:
+                temp_arr.append(temp_df)
+                if len(temp_arr) == x:
+                    return pd.concat(temp_arr[::-1]).reset_index(drop=True)
+
+    def games_list(self):
+        games_df = self.games_df(numpy=False)
+        games_dates = self.games_dates(mnums = True)
+
+        mnums  = games_dates["MNUM"]
+
+        home_teams, away_teams, scores_home, scores_away = [], [], [], []
+        for mnum in mnums:
+            mask = games_df["MNUM"] == mnum
+            game_df = games_df[mask]
+            home_teams.append(game_df["TEAM"].iloc[0])
+            away_teams.append(game_df["TEAM"].iloc[-1])
+            scores_home.append(game_df["SCORE"].iloc[0])
+            scores_away.append(game_df["SCORE"].iloc[-1])
+
+        games_list_df = pd.DataFrame({"MNUM" : mnums, "HOME" : home_teams, "AWAY" : away_teams,
+                                      "DATE" : games_dates["DATE"], "SCORE_HOME" : scores_home,
+                                      "SCORE_AWAY" : scores_away})
+        assert games_list_df.shape[1] > 0 and games_list_df.isna().sum().sum() == 0
+        games_list_df = games_list_df.sort_values("DATE")
+        return games_list_df
+
+
+class Game(Season):
+
+    def __init__(self, year, country, team_name, date):
+        super().__init__(year, country)
+        self.team_name = team_name
+        self.date = date
+
+    def one_team_df(self, numpy=False):
+        game_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
+                                  WHERE DATE = date("{self.date}") AND TEAM = "{self.team_name}"''').respond.fetchall()
+        return self.numpy_df(game_respond, numpy)
+
+    def df(self, numpy=False):
+        mnum = self.one_team_df(numpy)["MNUM"].iloc[0]
+        game = super().single_game(mnum, numpy)
+        return game
+
+
+class Statistics(Team):
+    games_num_to_take = 100
+
+    def __init__(self, year, country, name, date):
+        super().__init__(year, country, name)
+        self.date = date
+        self.last_x_games_all = super().last_x_games_all(Statistics.games_num_to_take, self.date)
+
+    def win_ratio_last_x(self, x, which="all"):
+
+        mnums = self.last_x_games_all["MNUM"].drop_duplicates()[::-1]
+        y_arr = []
+
+        def all_ha():
+            row = self.last_x_games_all[mask].iloc[0]
+            if row["TEAM"] == self.name:
+                temp_y = row["Y_TEAM_1"]
+                y_arr.append(temp_y)
+            else:
+                row = self.last_x_games_all[mask].iloc[-1]
+                temp_y = row["Y_TEAM_2"]
+                y_arr.append(temp_y)
+
+        def ha():
+            home_away_dict = {"home": 0, "away": -1}
+            row = self.last_x_games_all[mask].iloc[home_away_dict[which]]
+
+            if row["TEAM"] == self.name:
+                if which == "home":
+                    temp_y = row["Y_TEAM_1"]
+                else:
+                    temp_y = row["Y_TEAM_2"]
+                y_arr.append(temp_y)
+
+        for mnum in mnums:
+            mask = self.last_x_games_all["MNUM"] == mnum
+            if which == "all":
+                all_ha()
+            elif which == "home" or which == "away":
+                ha()
+            if len(y_arr) == x:
+                break
+        return sum(y_arr) / len(y_arr)
+
+# print(Team(2018, "pl", "Anwil Wloclawek").games_dates(mnums = True))
+# print(Statistics(2012, "pl", "Anwil Wloclawek", "2019-04-10").win_ratio_last_x(5))
+
+
+print(Team(2018, "pl", "Anwil Wloclawek").games_list().info())
