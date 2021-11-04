@@ -97,8 +97,8 @@ class Team(Season):
         if not mnums:
             games = self.games_df()["DATE"].drop_duplicates().sort_values()
         else:
-            games = self.games_df()[["DATE", "MNUM"]].drop_duplicates().sort_values("DATE").reset_index(drop=True)
-        return games
+            games = self.games_df()[["DATE", "MNUM"]].drop_duplicates().sort_values("DATE")
+        return games.reset_index(drop=True)
 
     def games_df(self, numpy=False):
         games_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
@@ -157,21 +157,32 @@ class Team(Season):
         games_list_df = games_list_df.sort_values("DATE")
         return games_list_df
 
-
     def date_checker(self, year, date):
         if date not in list(self.games_dates()):
             raise ValueError(f"Date {date} must be from indicated season {year}")
 
-class Game(Season):
+    def gain_pts_sum(self, date):
+        self.date_checker(self.year, date)
+        games_list = self.games_list()
+        mask_home  = (games_list["HOME"] == self.name) & (games_list["DATE"] < date)
+        mask_away  = (games_list["AWAY"] == self.name) & (games_list["DATE"] < date)
+        return games_list[mask_home]["SCORE_HOME"].sum() + games_list[mask_away]["SCORE_AWAY"].sum()
 
-    def __init__(self, year, country, team_name, date):
-        super().__init__(year, country)
-        self.team_name = team_name
+class Game(Team):
+
+    def __init__(self, year, country, name, date):
+        super().__init__(year, country, name)
+        self.name = name
         self.date = date
+        self.date_checker(self.year, self.date)
+
+    @property
+    def mnum(self):
+        return self.one_team_df()["MNUM"].iloc[0]
 
     def one_team_df(self, numpy=False):
         game_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
-                                  WHERE DATE = date("{self.date}") AND TEAM = "{self.team_name}"''').respond.fetchall()
+                                  WHERE DATE = date("{self.date}") AND TEAM = "{self.name}"''').respond.fetchall()
         return self.numpy_df(game_respond, numpy)
 
     def df(self, numpy=False):
@@ -179,6 +190,13 @@ class Game(Season):
         game = super().single_game(mnum, numpy)
         return game
 
+    def zip_team(self, by_feature = "EFF", players_num = 8):
+        game = self.one_team_df()
+        return game.sort_values(by_feature, ascending= False).iloc[:players_num].reset_index(drop = True)
+
+    @property
+    def which_week(self):
+        return list(self.games_dates()).index(self.date)
 
 class Statistics(Team):
     games_num_to_take = 100
@@ -220,9 +238,7 @@ class Statistics(Team):
             if len(y_arr) == x:
                 break
         return sum(y_arr) / len(y_arr)
-
 # print(Team(2018, "pl", "Anwil Wloclawek").games_dates(mnums = True))
 # print(Statistics(2012, "pl", "Anwil Wloclawek", "2019-04-10").win_ratio_last_x(5))
-
 # print(Statistics("pl", "Anwil Wloclawek", "2019-04-10").last_x_games_all(5))
-print(Statistics(2018, "pl", "Anwil Wloclawek", "2019-04-10").win_ratio_last_x(5))
+# print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").which_week)
