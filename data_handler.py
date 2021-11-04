@@ -139,18 +139,20 @@ class Team(Season):
 
         mnums  = games_dates["MNUM"]
 
-        home_teams, away_teams, scores_home, scores_away = [], [], [], []
-        for mnum in mnums:
+        def teams_names_scores_dates(mnum):
             mask = games_df["MNUM"] == mnum
             game_df = games_df[mask]
-            home_teams.append(game_df["TEAM"].iloc[0])
-            away_teams.append(game_df["TEAM"].iloc[-1])
-            scores_home.append(game_df["SCORE"].iloc[0])
-            scores_away.append(game_df["SCORE"].iloc[-1])
+            home_team = game_df["TEAM"].iloc[0]
+            away_team = game_df["TEAM"].iloc[-1]
+            score_home = game_df["SCORE"].iloc[0]
+            score_away = game_df["SCORE"].iloc[-1]
+            return home_team, away_team, score_home, score_away
 
+        home_teams, away_teams, scores_home, scores_away = zip(*map(teams_names_scores_dates, mnums))
         games_list_df = pd.DataFrame({"MNUM" : mnums, "HOME" : home_teams, "AWAY" : away_teams,
                                       "DATE" : games_dates["DATE"], "SCORE_HOME" : scores_home,
                                       "SCORE_AWAY" : scores_away})
+
         assert games_list_df.shape[1] > 0 and games_list_df.isna().sum().sum() == 0
         games_list_df = games_list_df.sort_values("DATE")
         return games_list_df
