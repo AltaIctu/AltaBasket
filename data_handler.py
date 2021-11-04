@@ -3,20 +3,16 @@ import pandas as pd
 import numpy as np
 
 
-class SqlRequest:
-    """ Connect with db, make req and get respond"""
+def sql_request(request):
+    conn = sqlite3.connect(f'scores_data.db')
+    c = conn.cursor()
+    respond = c.execute(request)
+    return respond.fetchall()
 
-    def __init__(self, request):
-        self.conn = sqlite3.connect(f'scores_data.db')
-        self.c = self.conn.cursor()
-        self.respond = self.c.execute(request)
 
 class Season:
     """ year - pass the year when season starts,
         country - pass country shortcut which is processing"""
-
-    import pandas as pd
-    import numpy as np
 
     def __init__(self, year, country):
         self.year = year
@@ -40,31 +36,30 @@ class Season:
         sign = data_dict[which][1]
         get_f = data_dict[which][2]
 
-        c = SqlRequest(f''' SELECT DATE FROM scores_{self.country} WHERE DATE {sign} "{date}" ''')
-        respond = c.respond.fetchall()
+        respond = sql_request(f''' SELECT DATE FROM scores_{self.country} WHERE DATE {sign} "{date}" ''')
         assert len(respond) > 0, "Returned date has 0 length. Check if year is correct."
         return get_f(respond)[0]
 
     def single_game(self, mnum, numpy=False):
-        game_respond = SqlRequest(f''' SELECT * from scores_{self.country} 
-        WHERE MNUM  = {mnum}''').respond.fetchall()
+        game_respond = sql_request(f''' SELECT * from scores_{self.country} 
+        WHERE MNUM  = {mnum}''')
         return self.numpy_df(game_respond, numpy)
 
     def games_df(self, numpy=False):
-        games = SqlRequest(f''' SELECT * from scores_{self.country} 
-        WHERE MNUM IN {self.mnums}''').respond.fetchall()
+        games = sql_request(f''' SELECT * from scores_{self.country} 
+        WHERE MNUM IN {self.mnums}''')
         return self.numpy_df(games, numpy)
 
     @property
     def teams(self):
-        teams_respond = SqlRequest(f''' SELECT DISTINCT TEAM from scores_{self.country} 
-        WHERE DATE BETWEEN  date('{self.start_date}') and date('{self.end_date}')''').respond.fetchall()
+        teams_respond = sql_request(f''' SELECT DISTINCT TEAM from scores_{self.country} 
+        WHERE DATE BETWEEN  date('{self.start_date}') and date('{self.end_date}')''')
         return [i[0] for i in teams_respond]
 
     @property
     def mnums(self):
-        mnums_resp = SqlRequest(f''' SELECT DISTINCT MNUM from scores_{self.country} 
-        WHERE DATE BETWEEN  date('{self.start_date}') and date('{self.end_date}')''').respond.fetchall()
+        mnums_resp = sql_request(f''' SELECT DISTINCT MNUM from scores_{self.country} 
+        WHERE DATE BETWEEN  date('{self.start_date}') and date('{self.end_date}')''')
         return tuple(i[0] for i in mnums_resp)
 
     @property
@@ -85,8 +80,8 @@ class Team(Season):
 
     @property
     def mnums(self):
-        team_mnums = SqlRequest(f''' SELECT DISTINCT MNUM FROM scores_{self.country} 
-        WHERE TEAM = "{self.name}" ''').respond.fetchall()
+        team_mnums = sql_request(f''' SELECT DISTINCT MNUM FROM scores_{self.country} 
+        WHERE TEAM = "{self.name}" ''')
         season_mnums = super().mnums
         return tuple(i[0] for i in team_mnums if i[0] in season_mnums)
 
@@ -102,21 +97,21 @@ class Team(Season):
         return games.reset_index(drop=True)
 
     def games_df(self, numpy=False):
-        games_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
-        WHERE MNUM IN {self.mnums} ''').respond.fetchall()
+        games_respond = sql_request(f''' SELECT * FROM scores_{self.country}
+        WHERE MNUM IN {self.mnums} ''')
         return self.numpy_df(games_respond, numpy)
 
     def last_x_mnums_before(self, name, x, date):
         self.date_checker(self.year, date)
-        mnums_before_date = SqlRequest(f''' SELECT MNUM FROM scores_{self.country}
-        WHERE DATE < date("{date}") AND TEAM = "{name}"''').respond.fetchall()
+        mnums_before_date = sql_request(f''' SELECT MNUM FROM scores_{self.country}
+        WHERE DATE < date("{date}") AND TEAM = "{name}"''')
         mnums_before_date = sorted(set(mnums_before_date))[-x:]
         return tuple(i[0] for i in mnums_before_date)
 
     def last_x_games_all(self, name, x, date, numpy=False):
         mnums_before_date = self.last_x_mnums_before(name, x, date)
-        games_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
-        WHERE MNUM IN {mnums_before_date} ''').respond.fetchall()
+        games_respond = sql_request(f''' SELECT * FROM scores_{self.country}
+        WHERE MNUM IN {mnums_before_date} ''')
         return self.numpy_df(games_respond, numpy)
 
     def last_x_games_ha(self, name, x, date, ha, numpy=False):
@@ -126,8 +121,8 @@ class Team(Season):
         home_away_dict = {"home": 0, "away": -1}
 
         for mnum in sorted(mnums_before_date, reverse=True):
-            game_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
-            WHERE MNUM = "{mnum}" ''').respond.fetchall()
+            game_respond = sql_request(f''' SELECT * FROM scores_{self.country}
+            WHERE MNUM = "{mnum}" ''')
             temp_df = self.numpy_df(game_respond, numpy)
             if temp_df["TEAM"].iloc[home_away_dict[ha]] == name:
                 temp_arr.append(temp_df)
@@ -182,8 +177,8 @@ class Game(Team):
         return self.one_team_df()["MNUM"].iloc[0]
 
     def one_team_df(self, numpy=False):
-        game_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
-                                  WHERE DATE = date("{self.date}") AND TEAM = "{self.name}"''').respond.fetchall()
+        game_respond = sql_request(f''' SELECT * FROM scores_{self.country}
+                                  WHERE DATE = date("{self.date}") AND TEAM = "{self.name}"''')
         return self.numpy_df(game_respond, numpy)
 
     def df(self, numpy=False):
