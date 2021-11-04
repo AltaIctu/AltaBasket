@@ -1,5 +1,6 @@
 import sqlite3
 import pandas as pd
+import numpy as np
 
 
 class SqlRequest:
@@ -192,7 +193,17 @@ class Game(Team):
 
     def zip_team(self, by_feature = "EFF", players_num = 8):
         game = self.one_team_df()
-        return game.sort_values(by_feature, ascending= False).iloc[:players_num].reset_index(drop = True)
+        game = game.sort_values(by_feature, ascending= False).reset_index(drop = True)
+        first_part = game.iloc[:players_num-1]
+        last_part  = game.iloc[-players_num-1:]
+
+        last_part  =  last_part.select_dtypes(include=[np.number]).mean()
+        last_part["MNUM"]   = first_part["MNUM"].iloc[0]
+        last_part["DATE"]   = first_part["DATE"].iloc[0]
+        last_part["PLAYER"] = "Players Meaned"
+        last_part["TEAM"]   = self.name
+
+        return pd.concat([first_part, pd.DataFrame(last_part).T], axis = 0).reset_index(drop = True)
 
     @property
     def which_week(self):
@@ -242,3 +253,4 @@ class Statistics(Team):
 # print(Statistics(2012, "pl", "Anwil Wloclawek", "2019-04-10").win_ratio_last_x(5))
 # print(Statistics("pl", "Anwil Wloclawek", "2019-04-10").last_x_games_all(5))
 # print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").which_week)
+print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").zip_team())
