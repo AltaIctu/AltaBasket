@@ -10,7 +10,6 @@ class SqlRequest:
         self.c = self.conn.cursor()
         self.respond = self.c.execute(request)
 
-
 class Season:
     """ year - pass the year when season starts,
         country - pass country shortcut which is processing"""
@@ -106,21 +105,22 @@ class Team(Season):
         WHERE MNUM IN {self.mnums} ''').respond.fetchall()
         return self.numpy_df(games_respond, numpy)
 
-    def last_x_mnums_before(self, x, date):
+    def last_x_mnums_before(self, name, x, date):
+        self.date_checker(self.year, date)
         mnums_before_date = SqlRequest(f''' SELECT MNUM FROM scores_{self.country}
-        WHERE DATE < date("{date}") AND TEAM = "{self.name}"''').respond.fetchall()
+        WHERE DATE < date("{date}") AND TEAM = "{name}"''').respond.fetchall()
         mnums_before_date = sorted(set(mnums_before_date))[-x:]
         return tuple(i[0] for i in mnums_before_date)
 
-    def last_x_games_all(self, x, date, numpy=False):
-        mnums_before_date = self.last_x_mnums_before(x, date)
+    def last_x_games_all(self, name, x, date, numpy=False):
+        mnums_before_date = self.last_x_mnums_before(name, x, date)
         games_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
         WHERE MNUM IN {mnums_before_date} ''').respond.fetchall()
         return self.numpy_df(games_respond, numpy)
 
-    def last_x_games_ha(self, x, date, ha, numpy=False):
+    def last_x_games_ha(self, name, x, date, ha, numpy=False):
         to_preview = 15
-        mnums_before_date = self.last_x_mnums_before(to_preview, date)
+        mnums_before_date = self.last_x_mnums_before(name, to_preview, date)
         temp_arr = []
         home_away_dict = {"home": 0, "away": -1}
 
@@ -128,7 +128,7 @@ class Team(Season):
             game_respond = SqlRequest(f''' SELECT * FROM scores_{self.country}
             WHERE MNUM = "{mnum}" ''').respond.fetchall()
             temp_df = self.numpy_df(game_respond, numpy)
-            if temp_df["TEAM"].iloc[home_away_dict[ha]] == self.name:
+            if temp_df["TEAM"].iloc[home_away_dict[ha]] == name:
                 temp_arr.append(temp_df)
                 if len(temp_arr) == x:
                     return pd.concat(temp_arr[::-1]).reset_index(drop=True)
@@ -158,6 +158,10 @@ class Team(Season):
         return games_list_df
 
 
+    def date_checker(self, year, date):
+        if date not in list(self.games_dates()):
+            raise ValueError(f"Date {date} must be from indicated season {year}")
+
 class Game(Season):
 
     def __init__(self, year, country, team_name, date):
@@ -182,7 +186,7 @@ class Statistics(Team):
     def __init__(self, year, country, name, date):
         super().__init__(year, country, name)
         self.date = date
-        self.last_x_games_all = super().last_x_games_all(Statistics.games_num_to_take, self.date)
+        self.last_x_games_all = super().last_x_games_all(self.name, Statistics.games_num_to_take, self.date)
 
     def win_ratio_last_x(self, x, which="all"):
 
@@ -204,10 +208,7 @@ class Statistics(Team):
             row = self.last_x_games_all[mask].iloc[home_away_dict[which]]
 
             if row["TEAM"] == self.name:
-                if which == "home":
-                    temp_y = row["Y_TEAM_1"]
-                else:
-                    temp_y = row["Y_TEAM_2"]
+                temp_y = row["Y_TEAM_1"] if which == "home" else row["Y_TEAM_2"]
                 y_arr.append(temp_y)
 
         for mnum in mnums:
@@ -223,5 +224,5 @@ class Statistics(Team):
 # print(Team(2018, "pl", "Anwil Wloclawek").games_dates(mnums = True))
 # print(Statistics(2012, "pl", "Anwil Wloclawek", "2019-04-10").win_ratio_last_x(5))
 
-
-print(Team(2018, "pl", "Anwil Wloclawek").games_list().info())
+# print(Statistics("pl", "Anwil Wloclawek", "2019-04-10").last_x_games_all(5))
+print(Statistics(2018, "pl", "Anwil Wloclawek", "2019-04-10").win_ratio_last_x(5))
