@@ -19,13 +19,15 @@ class Season:
         self.country = country
         self.start_date = self.season_date("start")
         self.end_date = self.season_date("end")
-        self.columns = [i[0] for i in pd.read_csv(f"columns_{self.country}.csv").iloc]
+        self.columns = [i[1] for i in sql_request("PRAGMA table_info(scores_pl)")]
+        # self.columns = [i[0] for i in pd.read_csv(f"columns_{self.country}.csv").iloc]
+
 
     def numpy_df(self, respond, numpy=False):
         if not numpy:
-            return Season.pd.DataFrame(respond, columns=self.columns)
+            return pd.DataFrame(respond, columns=self.columns)
         else:
-            return Season.np.array(respond)
+            return np.array(respond)
 
     def season_date(self, which):
 
@@ -70,6 +72,7 @@ class Season:
     @property
     def games_count(self):
         return len(set(self.mnums))
+
 
 
 class Team(Season):
@@ -136,18 +139,19 @@ class Team(Season):
         mnums  = games_dates["MNUM"]
 
         def teams_names_scores_dates(mnum):
-            mask = games_df["MNUM"] == mnum
-            game_df = games_df[mask]
-            home_team = game_df["TEAM"].iloc[0]
-            away_team = game_df["TEAM"].iloc[-1]
+            mask       = games_df["MNUM"] == mnum
+            game_df    = games_df[mask]
+            home_team  = game_df["TEAM"].iloc[0]
+            away_team  = game_df["TEAM"].iloc[-1]
             score_home = game_df["SCORE"].iloc[0]
             score_away = game_df["SCORE"].iloc[-1]
-            return home_team, away_team, score_home, score_away
+            y          = 1 if score_home > score_away else 0
+            return home_team, away_team, score_home, score_away, y
 
-        home_teams, away_teams, scores_home, scores_away = zip(*map(teams_names_scores_dates, mnums))
+        home_teams, away_teams, scores_home, scores_away, y = zip(*map(teams_names_scores_dates, mnums))
         games_list_df = pd.DataFrame({"MNUM" : mnums, "HOME" : home_teams, "AWAY" : away_teams,
                                       "DATE" : games_dates["DATE"], "SCORE_HOME" : scores_home,
-                                      "SCORE_AWAY" : scores_away})
+                                      "SCORE_AWAY" : scores_away, "Y" : y})
 
         assert games_list_df.shape[1] > 0 and games_list_df.isna().sum().sum() == 0
         games_list_df = games_list_df.sort_values("DATE")
@@ -157,12 +161,18 @@ class Team(Season):
         if date not in list(self.games_dates()):
             raise ValueError(f"Date {date} must be from indicated season {year}")
 
-    def gain_pts_sum(self, date):
+    def pts_sum(self, date, gained_or_loose_pts, all_home_or_away, whole_season):
         self.date_checker(self.year, date)
-        games_list = self.games_list()
-        mask_home  = (games_list["HOME"] == self.name) & (games_list["DATE"] < date)
-        mask_away  = (games_list["AWAY"] == self.name) & (games_list["DATE"] < date)
-        return games_list[mask_home]["SCORE_HOME"].sum() + games_list[mask_away]["SCORE_AWAY"].sum()
+        games_list = self.games_list(whole_season)
+        if gained_or_loose_pts == "gained":
+            mask_home  = (games_list["HOME"] == self.name) & (games_list["DATE"] < date)
+            mask_away  = (games_list["AWAY"] == self.name) & (games_list["DATE"] < date)
+        elif gained_or_loose_pts == "loose":
+            mask_home  = (games_list["HOME"] != self.name) & (games_list["DATE"] < date)
+            mask_away  = (games_list["AWAY"] != self.name) & (games_list["DATE"] < date)
+        if all_home_or_away == "all"    : return games_list[mask_home]["SCORE_HOME"].sum() + games_list[mask_away]["SCORE_AWAY"].sum()
+        elif all_home_or_away == "home" : return games_list[mask_home]["SCORE_HOME"].sum()
+        elif all_home_or_away == "away" : return games_list[mask_away]["SCORE_AWAY"].sum()
 
 class Game(Team):
 
@@ -203,6 +213,7 @@ class Game(Team):
     @property
     def which_week(self):
         return list(self.games_dates()).index(self.date)
+#   This will be extend by cos and sinus return
 
 class Statistics(Team):
     games_num_to_take = 100
@@ -244,8 +255,31 @@ class Statistics(Team):
             if len(y_arr) == x:
                 break
         return sum(y_arr) / len(y_arr)
-# print(Team(2018, "pl", "Anwil Wloclawek").games_dates(mnums = True))
+
+    def standings(self, whole_season):
+        games_list_df = self.games_list()
+        if not whole_season:
+            date_mask = games_list_df["DATE"] < self.date
+            games_list_df = games_list_df[date_mask]
+
+        def home_away_standings(home_or_away):
+            name_mask  = games_list_df[home_or_away] == self.name
+            games = games_list_df[name_mask]
+            if home_or_away == "HOME":
+                wins_num, loss_num   = games["Y"].sum(), games[games["Y"] == 0].shape[0]
+            elif home_or_away == "AWAY":
+                loss_num, wins_num = games["Y"].sum(), games[games["Y"] == 0].shape[0]
+
+            return wins_num, loss_num
+
+        home_wins_num, home_loss_num = home_away_standings(home_or_away = "HOME")
+        away_wins_num, away_loss_num = home_away_standings(home_or_away = "AWAY")
+        return home_wins_num, home_loss_num, away_wins_num, away_loss_num
+
+# print()
 # print(Statistics(2012, "pl", "Anwil Wloclawek", "2019-04-10").win_ratio_last_x(5))
-# print(Statistics("pl", "Anwil Wloclawek", "2019-04-10").last_x_games_all(5))
+for date in Team(2018, "pl", "Anwil Wloclawek").games_dates():
+    print(Statistics(2018, "pl", "Anwil Wloclawek", date).standings(whole_season=False))
 # print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").which_week)
-print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").zip_team())
+# print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").zip_team())
+# print(len(sql_request("PRAGMA table_info(scores_pl)")))
