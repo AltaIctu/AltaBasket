@@ -11,8 +11,18 @@ def sql_request(request):
 
 
 class Season:
-    """ year - pass the year when season starts,
-        country - pass country shortcut which is processing"""
+    """ Init input:
+        year - pass the year when season starts,
+        country - pass country shortcut which is processing
+
+        Methods:
+            numpy_df(respond[sql], numpy[bool])
+            season_date(which[str])
+            single_game(mnum[int], numpy[bool])
+            games_df(numpy[bool])
+        Properties:
+            teams, mnums, bencjamins, games_count
+        """
 
     def __init__(self, year, country):
         self.year = year
@@ -20,7 +30,6 @@ class Season:
         self.start_date = self.season_date("start")
         self.end_date = self.season_date("end")
         self.columns = [i[1] for i in sql_request("PRAGMA table_info(scores_pl)")]
-        # self.columns = [i[0] for i in pd.read_csv(f"columns_{self.country}.csv").iloc]
 
 
     def numpy_df(self, respond, numpy=False):
@@ -76,7 +85,22 @@ class Season:
 
 
 class Team(Season):
+    """
+    Init input:
+        year[int], country[str], name[str]
+    Methods:
+        games_dates(mnums[int])
+        games_df(numpy[bool])
+        last_x_mnums_before(self, name, x, date):
+        last_x_games_all(name[str], x[int], date[str YYYY-MM-DD], numpy[bool]):
+        last_x_games_ha((name[str], x[int], date[str YYYY-MM-DD], ha[str home/away], numpy[boo]):
+        games_list():
+        date_checker(self, year[int], date[str YYYY-MM-DD]):
+        pts_sum(date[str YYYY-MM-DD] gained_or_loose_pts[str gained/loss], all_home_or_away[str all/home/away], whole_season[bool])
+    Properties:
+        mnums
 
+    """
     def __init__(self, year, country, name):
         super().__init__(year, country)
         self.name = name
@@ -175,7 +199,17 @@ class Team(Season):
         elif all_home_or_away == "away" : return games_list[mask_away]["SCORE_AWAY"].sum()
 
 class Game(Team):
-
+    """
+    Init input:
+        year[int], country[str], name[str], date[str]
+    Methods:
+        one_team_df(numpy[bool])
+        df(numpy[bool])
+        zip_team(by_feature[str], players_num[int])
+        which_week(sin_cos[bool])
+    Properties:
+        mnum
+    """
     def __init__(self, year, country, name, date):
         super().__init__(year, country, name)
         self.name = name
@@ -210,12 +244,27 @@ class Game(Team):
 
         return pd.concat([first_part, pd.DataFrame(last_part).T], axis = 0).reset_index(drop = True)
 
-    @property
-    def which_week(self):
-        return list(self.games_dates()).index(self.date)
-#   This will be extend by cos and sinus return
+    def which_week(self, sin_cos=False):
+        dates = self.games_dates()
+        date  = self.date
+        if sin_cos:
+            from math import pi
+            norm = 2 * pi * list(dates).index(date) / len(dates)
+            c = np.cos(norm)
+            s = np.sin(norm)
+            return np.round(s,3), np.round(c,3)
+        else:
+            return list(dates).index(date)
+
 
 class Statistics(Team):
+    """
+     Init input:
+        year[int], country[str], name[str], date[str]
+    Methods:
+        win_ratio_last_x(x[int], which[str all/home/away]
+        standings(whole_season[bool])
+    """
     games_num_to_take = 100
 
     def __init__(self, year, country, name, date):
@@ -271,15 +320,15 @@ class Statistics(Team):
                 loss_num, wins_num = games["Y"].sum(), games[games["Y"] == 0].shape[0]
 
             return wins_num, loss_num
+        win_loss_dict = {}
+        win_loss_dict["home_wins_num"], win_loss_dict["home_loss_num"] = home_away_standings(home_or_away = "HOME")
+        win_loss_dict["away_wins_num"], win_loss_dict["away_loss_num"] = home_away_standings(home_or_away = "AWAY")
+        return win_loss_dict
 
-        home_wins_num, home_loss_num = home_away_standings(home_or_away = "HOME")
-        away_wins_num, away_loss_num = home_away_standings(home_or_away = "AWAY")
-        return home_wins_num, home_loss_num, away_wins_num, away_loss_num
 
-# print()
 # print(Statistics(2012, "pl", "Anwil Wloclawek", "2019-04-10").win_ratio_last_x(5))
-for date in Team(2018, "pl", "Anwil Wloclawek").games_dates():
-    print(Statistics(2018, "pl", "Anwil Wloclawek", date).standings(whole_season=False))
-# print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").which_week)
+# print(Team(2018, "pl", "Anwil Wloclawek").games_dates())
+# print(Statistics(2018, "pl", "Anwil Wloclawek", "2019-04-20").standings(whole_season=False))
+print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").which_week(sin_cos = True))
 # print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").zip_team())
 # print(len(sql_request("PRAGMA table_info(scores_pl)")))
