@@ -10,3 +10,4 @@ def seasons_boundaries(ctry_name):
     return season_dict
 
 print(seasons_boundaries("pl"))
+
