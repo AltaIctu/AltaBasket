@@ -10,6 +10,25 @@ def sql_request(request):
     return respond.fetchall()
 
 
+class Country():
+    """
+    Init input:
+        name[str]
+    Properties:
+        years
+    """
+    def __init__(self, name):
+        self.name = name
+
+    @property
+    def years(self):
+        dates = sql_request(f""" SELECT DATE FROM  scores_{self.name}""")
+        dates = set([i[0] for i in dates])
+        dates = set([i[:4] for i in dates])
+        dates = sorted(list([int(i) for i in dates]))
+        return dates[:-1]
+
+
 class Season:
     """ Init input:
         year - pass the year when season starts,
@@ -81,7 +100,6 @@ class Season:
     @property
     def games_count(self):
         return len(set(self.mnums))
-
 
 
 class Team(Season):
@@ -197,6 +215,7 @@ class Team(Season):
         if all_home_or_away == "all"    : return games_list[mask_home]["SCORE_HOME"].sum() + games_list[mask_away]["SCORE_AWAY"].sum()
         elif all_home_or_away == "home" : return games_list[mask_home]["SCORE_HOME"].sum()
         elif all_home_or_away == "away" : return games_list[mask_away]["SCORE_AWAY"].sum()
+
 
 class Game(Team):
     """
@@ -329,6 +348,6 @@ class Statistics(Team):
 # print(Statistics(2012, "pl", "Anwil Wloclawek", "2019-04-10").win_ratio_last_x(5))
 # print(Team(2018, "pl", "Anwil Wloclawek").games_dates())
 # print(Statistics(2018, "pl", "Anwil Wloclawek", "2019-04-20").standings(whole_season=False))
-print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").which_week(sin_cos = True))
+# print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").which_week(sin_cos = True))
 # print(Game(2018, "pl", "Anwil Wloclawek", "2019-04-10").zip_team())
 # print(len(sql_request("PRAGMA table_info(scores_pl)")))
