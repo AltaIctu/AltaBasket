@@ -80,6 +80,37 @@ class Season:
         WHERE MNUM IN {self.mnums}''')
         return self.numpy_df(games, numpy)
 
+    def games_dates(self, mnums = False):
+        if not mnums:
+            return sorted(list())
+        else:
+            return self.games_df()[["DATE", "MNUM"]].drop_duplicates().sort_values(["DATE", "MNUM"])
+
+    def games_list(self):
+        games_df = self.games_df(numpy=False)
+        games_dates = self.games_dates(mnums = True)
+
+        mnums  = games_dates["MNUM"]
+
+        def teams_names_scores_dates(mnum):
+            mask       = games_df["MNUM"] == mnum
+            game_df    = games_df[mask]
+            home_team  = game_df["TEAM"].iloc[0]
+            away_team  = game_df["TEAM"].iloc[-1]
+            score_home = game_df["SCORE"].iloc[0]
+            score_away = game_df["SCORE"].iloc[-1]
+            y          = 1 if score_home > score_away else 0
+            return home_team, away_team, score_home, score_away, y
+
+        home_teams, away_teams, scores_home, scores_away, y = zip(*map(teams_names_scores_dates, mnums))
+        games_list_df = pd.DataFrame({"MNUM" : mnums, "HOME" : home_teams, "AWAY" : away_teams,
+                                      "DATE" : games_dates["DATE"], "SCORE_HOME" : scores_home,
+                                      "SCORE_AWAY" : scores_away, "Y" : y})
+
+        assert games_list_df.shape[1] > 0 and games_list_df.isna().sum().sum() == 0
+        games_list_df = games_list_df.sort_values("DATE")
+        return games_list_df
+
     @property
     def teams(self):
         teams_respond = sql_request(f''' SELECT DISTINCT TEAM from scores_{self.country} 
@@ -101,7 +132,6 @@ class Season:
     def games_count(self):
         return len(set(self.mnums))
 
-
 class Team(Season):
     """
     Init input:
@@ -117,7 +147,6 @@ class Team(Season):
         pts_sum(date[str YYYY-MM-DD] gained_or_loose_pts[str gained/loss], all_home_or_away[str all/home/away], whole_season[bool])
     Properties:
         mnums
-
     """
     def __init__(self, year, country, name):
         super().__init__(year, country)
@@ -174,38 +203,13 @@ class Team(Season):
                 if len(temp_arr) == x:
                     return pd.concat(temp_arr[::-1]).reset_index(drop=True)
 
-    def games_list(self):
-        games_df = self.games_df(numpy=False)
-        games_dates = self.games_dates(mnums = True)
-
-        mnums  = games_dates["MNUM"]
-
-        def teams_names_scores_dates(mnum):
-            mask       = games_df["MNUM"] == mnum
-            game_df    = games_df[mask]
-            home_team  = game_df["TEAM"].iloc[0]
-            away_team  = game_df["TEAM"].iloc[-1]
-            score_home = game_df["SCORE"].iloc[0]
-            score_away = game_df["SCORE"].iloc[-1]
-            y          = 1 if score_home > score_away else 0
-            return home_team, away_team, score_home, score_away, y
-
-        home_teams, away_teams, scores_home, scores_away, y = zip(*map(teams_names_scores_dates, mnums))
-        games_list_df = pd.DataFrame({"MNUM" : mnums, "HOME" : home_teams, "AWAY" : away_teams,
-                                      "DATE" : games_dates["DATE"], "SCORE_HOME" : scores_home,
-                                      "SCORE_AWAY" : scores_away, "Y" : y})
-
-        assert games_list_df.shape[1] > 0 and games_list_df.isna().sum().sum() == 0
-        games_list_df = games_list_df.sort_values("DATE")
-        return games_list_df
-
     def date_checker(self, year, date):
         if date not in list(self.games_dates()):
             raise ValueError(f"Date {date} must be from indicated season {year}")
 
-    def pts_sum(self, date, gained_or_loose_pts, all_home_or_away, whole_season):
+    def pts_sum(self, date, gained_or_loose_pts, all_home_or_away):
         self.date_checker(self.year, date)
-        games_list = self.games_list(whole_season)
+        games_list = self.games_list()
         if gained_or_loose_pts == "gained":
             mask_home  = (games_list["HOME"] == self.name) & (games_list["DATE"] < date)
             mask_away  = (games_list["AWAY"] == self.name) & (games_list["DATE"] < date)
@@ -249,8 +253,9 @@ class Game(Team):
         game = super().single_game(mnum, numpy)
         return game
 
-    def zip_team(self, by_feature = "EFF", players_num = 8):
-        game = self.one_team_df()
+    def zip_team(self, game = None, by_feature = "EFF", players_num = 8):
+        if not isinstance(game, pd.DataFrame):
+            game = self.one_team_df()
         game = game.sort_values(by_feature, ascending= False).reset_index(drop = True)
         first_part = game.iloc[:players_num-1]
         last_part  = game.iloc[-players_num-1:]
